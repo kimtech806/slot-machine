@@ -1,0 +1,645 @@
+
+#include "U8glib.h"
+
+U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE|U8G_I2C_OPT_DEV_0);  // I2C / TWI 
+long randNumber;
+#include <SoftwareSerial.h>
+SoftwareSerial Serial1(12,13);
+#include <avr/wdt.h>
+#include <EEPROM.h>
+//Arduinoをリセットする
+void software_reset() {
+    wdt_disable();
+    wdt_enable(WDTO_15MS);
+    while (1) {}
+} 
+byte Load_Bootstate() {
+    int state;
+    state = EEPROM.read(0);
+    return state;
+}
+ void Set_Bootstate(int state) {
+    EEPROM.write(0, state);
+}
+int stateD;             // pin states
+int stateF;             // pin states
+int adata = 0;           // rotate data
+unsigned char order[4] = {0xAA,0x06,0x00,0xB0};
+long number;
+void setup(){
+pinMode(2,INPUT_PULLUP);
+pinMode(3,OUTPUT); //big
+pinMode(4,OUTPUT); //reg
+pinMode(5,OUTPUT);//loss 暗転
+pinMode(6,OUTPUT);//回転数　BRハズレ
+pinMode(7,OUTPUT);//バイブ
+pinMode(8,OUTPUT);//光る(割り込みハイビスカス)
+pinMode(9,OUTPUT);//回転数リセット
+pinMode(15,OUTPUT);//mode
+pinMode(16,OUTPUT);//mode
+randomSeed(analogRead(3));
+ Serial1.begin(9600);
+pinMode(10,INPUT_PULLUP);//d 10液晶モード
+pinMode(11,OUTPUT);//d11カナランプ
+//d12.13 音源,ｄ14 モード切替,d17 ランダム,d18,19 液晶 
+u8g.setFont(u8g_font_courB18);
+  if ( u8g.getMode() == U8G_MODE_R3G3B2 ) {
+    u8g.setColorIndex(255);     // white
+  }
+  else if ( u8g.getMode() == U8G_MODE_GRAY2BIT ) {
+    u8g.setColorIndex(3);         // max intensity
+  }
+  else if ( u8g.getMode() == U8G_MODE_BW ) {
+    u8g.setColorIndex(1);         // pixel on
+  }
+  else if ( u8g.getMode() == U8G_MODE_HICOLOR ) {
+    u8g.setHiColorByRGB(255,255,255);
+  }
+
+ volume(0x1E);//Volume settings 0x00-0x1E
+    if (Load_Bootstate() == 0) { //メモリに0が書いてあるので再起動する
+        Set_Bootstate(1); //EEPROMに1を書いておく　次は通常起動
+        delay(500);
+        software_reset();
+    }
+    Set_Bootstate(0); //メモリに0を書いておく.
+v_reg();
+delay(1000);
+
+v_blank();
+delay(200);
+}
+
+int vmode=0;//mo-do
+byte ren = 0;//連荘数
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ 
+stateD = digitalRead(2);                // read
+   if ( stateD == 1 && stateF == 0 ) // plus count
+     adata++;
+     stateF = stateD;
+delay(10);
+
+if(adata>=1){  
+number = random(1,65536);
+
+}
+
+if( adata >= 1){
+adata -= 1;
+} 
+long moti =number;
+int s_set = analogRead(A0);
+if((s_set >= 0)&&(s_set <= 350)){
+ren = 0;
+}
+
+if((s_set >= 0)&&(s_set <= 350)){
+//green  　通常mode●
+digitalWrite(15,HIGH); 
+digitalWrite(16,LOW); 
+
+
+
+
+
+if(vmode == 2){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 32768)){
+// REG1
+n_reg1();
+vmode = 7;
+ }
+
+ else if((moti >= 32769)&&(moti <= 65536)){
+// REG2
+n_reg2();
+vmode = 7;
+ }
+}
+
+else if(vmode == 1){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+else if((moti >= 1)&&(moti <= 32768)){
+// BIG1
+n_big1();
+vmode = 7;
+}
+
+else if((moti >= 32769)&&(moti <= 65536)){
+// BIG2
+n_big2();
+vmode = 7;
+}
+}
+else if(vmode == 0){
+//n_通常
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 9999)){
+ // LOSS
+n_loss();
+}
+else if((moti >= 10000)&&(moti <= 10241)){
+// no_b
+n_loss();
+vmode = 1;
+}
+else if((moti >= 10242)&&(moti <= 10252)){
+// cherry_b
+e_cherry1();
+vmode = 1;
+}
+else if((moti >= 10253)&&(moti <= 10263)){
+// suika_b
+esp_suika();
+vmode = 1;
+}
+else if((moti >= 10264)&&(moti <= 10283)){
+// vib_b
+e_vibe();
+vmode = 1;
+}
+
+
+ else if((moti >= 10284)&&(moti <= 10461)){
+// REG2
+n_loss();
+vmode = 2;
+ }
+ else if((moti >= 10462)&&(moti <= 10483)){
+// cherry_r
+e_cherry1();
+vmode = 2;
+}
+
+//hazure
+
+else if((moti >= 10484)&&(moti <= 11794)){ //1/50
+// cherry
+e_cherry1();
+vmode = 0;
+}
+else if((moti >= 11795)&&(moti <= 12232)){ //1/150
+// suika
+esp_suika();
+vmode = 0;
+}
+ else if((moti >= 12233)&&(moti <= 65537)){
+ // LOSS
+n_loss();
+}
+//BIG　２８１　REG　１９７--  1;1.4
+}
+}
+
+
+
+
+else if((s_set >= 801)&&(s_set <= 1100)){
+// yielow  ST準備 mode●
+digitalWrite(15,HIGH); 
+digitalWrite(16,HIGH); 
+
+if(vmode == 2){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 32768)){
+// REG3
+n_reg3();
+vmode = 7;
+ }
+
+ else if((moti >= 32769)&&(moti <= 65536)){
+// REG3
+n_reg3();
+vmode = 7;
+ }
+}
+
+else if(vmode == 1){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+else if((moti >= 1)&&(moti <= 32768)){
+// BIG1
+s_big1();
+vmode = 7;
+}
+
+else if((moti >= 32769)&&(moti <= 65536)){
+// BIG2
+s_big2();
+vmode = 7;
+}
+}
+
+else if(vmode == 0){
+//n_通常
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 9999)){
+ // LOSS
+n_loss2();
+}
+else if((moti >= 10000)&&(moti <= 10241)){
+// no_b
+n_loss2();
+vmode = 1;
+}
+else if((moti >= 10242)&&(moti <= 10252)){
+// cherry_b
+e_cherry1();
+vmode = 1;
+}
+else if((moti >= 10253)&&(moti <= 10263)){
+// suika_b
+esp_suika();
+vmode = 1;
+}
+else if((moti >= 10264)&&(moti <= 10283)){
+// vib_b
+e_vibe();
+vmode = 1;
+}
+
+
+ else if((moti >= 10284)&&(moti <= 10461)){
+// REG2
+n_loss2();
+vmode = 2;
+ }
+ else if((moti >= 10462)&&(moti <= 10483)){
+// cherry_r
+e_cherry1();
+vmode = 2;
+}
+
+ else if((moti >= 10484)&&(moti <= 65537)){
+ // LOSS
+n_loss2();
+}
+//BIG　２８１　REG　１９７--  1;1.4
+}
+}
+
+if(vmode == 7){
+vmode = 0;
+}
+if( moti >= 1){
+number=0;
+}
+ }
+void h_ren(){
+ren++;
+u8g.firstPage();  
+  do {
+u8g.setColorIndex(1);
+u8g.drawStr( 10, 22, "HANA REN");
+u8g.setPrintPos(80,50);
+u8g.print(ren);  
+  } while( u8g.nextPage() );
+}
+
+
+void s_reset(){
+digitalWrite(3,LOW);
+digitalWrite(4,LOW);
+digitalWrite(5,HIGH); 
+digitalWrite(6,LOW); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+play(0x00);
+delay(30);
+}
+
+
+void n_loss(){
+
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_blank();
+delay(200);
+play(0x02);
+delay(900);
+}
+
+void n_loss2(){
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+
+delay(200);
+play(0x02);
+delay(900);
+}
+
+void v_blank(){
+    u8g.firstPage();  
+  do {
+ u8g.setColorIndex(0);
+u8g.drawBox(0, 0, 128, 64);
+  } while( u8g.nextPage() );
+}
+
+void n_big1(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400); 
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x06);
+delay(31400);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+
+void n_big2(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200); 
+v_BIG();
+delay(400);
+play(0x07);
+delay(32400);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+void s_big1(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+digitalWrite(7,HIGH);
+delay(1000);
+digitalWrite(7,LOW);
+delay(400);
+digitalWrite(7,HIGH);
+delay(2000);
+digitalWrite(7,LOW);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x09);
+delay(34000);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+void s_big2(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+digitalWrite(7,HIGH);
+delay(1000);
+digitalWrite(7,LOW);
+delay(400);
+digitalWrite(7,HIGH);
+delay(2000);
+digitalWrite(7,LOW);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x09);
+delay(34000);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+
+void n_reg1(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(4,HIGH);
+digitalWrite(5,LOW); 
+play(0x01);
+delay(2000); 
+v_blank();
+delay(400);
+v_reg();
+delay(500);
+play(0x08);
+delay(29400);
+digitalWrite(4,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+void n_reg2(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(4,HIGH);
+digitalWrite(5,LOW); 
+play(0x01);
+delay(2000); 
+v_blank();
+delay(400);
+v_reg();
+delay(500);
+play(0x08);
+delay(29400);
+digitalWrite(4,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+void n_reg3(){
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(4,HIGH);
+digitalWrite(5,LOW); 
+play(0x01);
+delay(2000); 
+v_blank();
+delay(400);
+v_reg();
+delay(500);
+play(0x08);
+delay(29400);
+digitalWrite(4,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+h_ren();
+delay(1500);
+}
+
+void v_BIG(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "BIG");
+u8g.drawStr( 21, 55, "BONUS");
+} while ( u8g.nextPage() );
+}
+
+void v_CHANCE(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 41, "CHANCE");
+} while ( u8g.nextPage() );
+}
+
+void v_reg(){
+    u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "REG");
+u8g.drawStr( 21, 55, "BONUS");
+} while ( u8g.nextPage() );
+}
+void v_cherry(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 60, "cherry");
+u8g.drawEllipse(93, 22, 14, 6);
+u8g.drawEllipse(98, 34, 15, 6);
+u8g.drawLine(80, 24, 97, 22);
+u8g.drawLine(80, 35, 105, 34);
+u8g.drawFilledEllipse(67, 14, 11, 11);
+u8g.drawFilledEllipse(78, 34, 13, 13);
+u8g.drawFilledEllipse(53, 34, 12, 12);
+  } while( u8g.nextPage() );  
+}
+
+void e_vibe(){  //２％　　
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+digitalWrite(7,HIGH); 
+delay(1000);
+digitalWrite(7,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+play(0x02);
+delay(900);
+}
+void e_cherry1(){ 
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+v_cherry();
+delay(200);
+play(0x12);//n_cherry
+delay(1000);
+play(0x02);
+delay(900);
+}
+void esp_suika(){  
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+v_CHANCE();
+delay(200);
+play(0x13);//sp_cherry
+delay(1700);
+play(0x02);
+delay(1100);
+}
+void play(unsigned char Track)
+{
+ unsigned char play[6] = {0xAA,0x07,0x02,0x00,Track,Track+0xB3};
+   Serial1.write(play,6);
+}
+void volume( unsigned char vol)
+{
+  unsigned char volume[5] = {0xAA,0x13,0x01,vol,vol+0xBE};
+     Serial1.write(volume,5);
+ }
+void statu( unsigned char sta)
+{
+  unsigned char statu[5] = {0xAA,0x01,0x00,sta,sta+0xAB};
+     Serial1.write(statu,5);
+ }
