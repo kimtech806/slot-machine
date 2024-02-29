@@ -1,0 +1,229 @@
+
+
+
+//４桁表示機　32mode 完成●
+//A0,A1 入力、A2　一部リセット,A3　表示切替　A４全部リセット　A５　３２ｇｍｏｄｅ　
+//1000 d13,100 d10,10 d9,1 d7
+//b d8,a d12,f d11,g d6,c d5,d d3,e d2
+
+
+
+#include <MsTimer2.h>
+
+const int anode_pins[] = {12, 8, 5, 3, 2, 11, 6, 4};    
+const int cathode_pins[] = {7, 9, 10, 13};  
+const int number_of_anode_pins = sizeof(anode_pins) / sizeof(anode_pins[0]); 
+const int number_of_cathode_pins = sizeof(cathode_pins) / sizeof(cathode_pins[0]); 
+int numbers_to_display = 0; 
+
+const int digits[] = {
+  0b00111111, // 0
+  0b00000110, // 1
+  0b01011011, // 2
+  0b01001111, // 3
+  0b01100110, // 4
+  0b01101101, // 5
+  0b01111101, // 6
+  0b00100111, // 7
+  0b01111111, // 8
+  0b01101111, // 9
+};
+
+void display_number (int n) {
+  for (int i = 0; i < number_of_anode_pins; i++) {
+    digitalWrite(anode_pins[i], digits[n] & (1 << i) ? HIGH : LOW);
+  }
+}
+
+void clear_segments() {
+  for (int j = 0; j < number_of_anode_pins; j++) {
+    digitalWrite(anode_pins[j], LOW);
+  }
+}
+
+void display_numbers () {
+  int n = numbers_to_display;  
+  for (int i = 0; i < number_of_cathode_pins; i++) {
+    digitalWrite(cathode_pins[i], LOW);
+    display_number(n % 10); 
+    delayMicroseconds(100);
+    clear_segments();
+    digitalWrite(cathode_pins[i], HIGH);
+    n = n / 10; 
+  }
+}
+
+void set_numbers(int n) {
+  noInterrupts();
+  numbers_to_display = n;
+  interrupts();
+}
+
+
+#include <EEPROM.h>
+int bal0 = EEPROM.read(0);
+
+ 
+void EEPROM_SAVER(int address, long val, byte val_type) {
+  for (byte i = 0 ; i < val_type ; i++)
+  {
+    EEPROM[address + i] = (val >> (i * 8)) & B11111111;
+  }
+}
+long EEPROM_LOADER(int address, byte val_type) {
+  long ret_val = 0;
+  for (byte i = 0 ; i < val_type ; i++)
+  {
+    ret_val += EEPROM[address + i] << (i * 8);
+  }
+  return ret_val;
+}
+
+int stateA;             // pin states
+int stateC;             // pin states
+int data = EEPROM_LOADER(bal0, 2);           
+
+int stateD;             // pin states
+int stateF;             // pin states
+int adata = 0;           // rotate data
+
+
+int stateG;             // pin states
+int stateI;             // pin states
+int bdata = 0;           // rotate data
+
+void setup(){
+
+
+  for (int i = 0; i < number_of_anode_pins; i++) {
+    pinMode(anode_pins[i], OUTPUT);  
+  }
+  for (int i = 0; i < number_of_cathode_pins; i++) {
+    pinMode(cathode_pins[i], OUTPUT);  
+    digitalWrite(cathode_pins[i], HIGH);
+  }
+
+  MsTimer2::set(1, display_numbers); 
+  MsTimer2::start(); 
+
+pinMode(0,OUTPUT);//5000gtimer
+pinMode(1,OUTPUT);//87連用
+ pinMode(14,INPUT_PULLUP);//A0
+pinMode(15,INPUT_PULLUP);//A1
+pinMode(16,INPUT_PULLUP);//A2
+pinMode(17,INPUT_PULLUP);//A3
+pinMode(18,INPUT_PULLUP);//A4
+pinMode(19,OUTPUT);//A5  32g
+Serial.end();
+}
+
+
+void loop(){
+  
+switch(adata){  
+case 0:
+digitalWrite(19,HIGH);
+digitalWrite(1,LOW);
+break;
+case 87:
+digitalWrite(1,HIGH);
+break;
+case 100:
+digitalWrite(19,LOW);
+break;
+case 1000:
+digitalWrite(19,HIGH);
+break;
+
+}
+
+switch(data){  
+case 5000:
+digitalWrite(0,LOW);
+break;
+
+default:
+digitalWrite(0,HIGH);
+}
+
+switch(digitalRead(18)){
+case 0:
+
+break;
+
+case 1:
+data=0;
+adata=0;
+  break;
+
+}
+
+
+  
+stateA = digitalRead(14);                // read
+
+if ( stateA == 1 && stateC == 0 ) // plus count
+data++;
+
+stateC = stateA;
+delay(10);
+EEPROM_SAVER(bal0,data, 2);
+
+
+
+ stateD = digitalRead(15);                // read
+
+   if ( stateD == 1 && stateF == 0 ) // plus count
+     adata++;
+
+     stateF = stateD;
+delay(10);
+
+
+ stateG = digitalRead(17);                // read
+
+   if ( stateG == 1 && stateI == 0 ) // plus count
+     bdata++;
+
+     stateI = stateG;
+delay(10);
+
+
+
+if( bdata >= 2){
+bdata -=2;  
+}
+
+
+
+switch(digitalRead(16)){  
+case 0:
+
+break;
+
+case 1:
+adata=0;
+break;
+}
+
+
+
+switch(bdata){  
+case 0:
+
+ set_numbers(adata);
+ delay(200);
+break;
+
+case 1:
+
+
+ set_numbers(data);
+    delay(200);
+
+
+break;
+}
+
+
+}
