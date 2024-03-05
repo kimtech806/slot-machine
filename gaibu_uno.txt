@@ -1,0 +1,28 @@
+//25500 がマイナス１００状態。25400がマイナス２００．
+
+
+void setup(){
+  Serial.begin(9600);
+}
+int t_im = 0;      
+
+
+                        
+void loop(){
+
+int m_im = t_im*10;
+Serial.print(m_im);
+Serial.println("　分経過");
+
+  while(Serial.available()){
+    int vol = (int)Serial.read();
+    Serial.print(vol*100);
+    Serial.print("  ");
+
+    }
+    Serial.println("  ");
+delay(600000);
+    Serial.println("  ");
+t_im++;
+
+  }
