@@ -1,0 +1,1784 @@
+
+
+
+#include "U8glib.h"
+
+U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE|U8G_I2C_OPT_DEV_0);  // I2C / TWI 
+long randNumber;
+#include <SoftwareSerial.h>
+SoftwareSerial Serial1(12,13);
+#include <avr/wdt.h>
+#include <EEPROM.h>
+//Arduinoをリセットする
+void software_reset() {
+    wdt_disable();
+    wdt_enable(WDTO_15MS);
+    while (1) {}
+} 
+byte Load_Bootstate() {
+    int state;
+    state = EEPROM.read(0);
+    return state;
+}
+ void Set_Bootstate(int state) {
+    EEPROM.write(0, state);
+}
+int stateD;             // pin states
+int stateF;             // pin states
+int adata = 0;           // rotate data
+unsigned char order[4] = {0xAA,0x06,0x00,0xB0};
+long number;
+void setup(){
+pinMode(2,INPUT_PULLUP);
+pinMode(3,OUTPUT); //big
+pinMode(4,OUTPUT); //reg
+pinMode(5,OUTPUT);//loss 暗転
+pinMode(6,OUTPUT);//回転数　BRハズレ
+pinMode(7,OUTPUT);//バイブ
+pinMode(8,OUTPUT);//光る(割り込みハイビスカス)
+pinMode(9,OUTPUT);//回転数リセット
+pinMode(15,OUTPUT);//mode
+pinMode(16,OUTPUT);//mode
+randomSeed(analogRead(3));
+ Serial1.begin(9600);
+pinMode(10,INPUT_PULLUP);//d 10液晶モード
+pinMode(11,OUTPUT);//d11カナランプ
+//d12.13 音源,ｄ14 モード切替,d17 ランダム,d18,19 液晶 
+u8g.setFont(u8g_font_courB18);
+  if ( u8g.getMode() == U8G_MODE_R3G3B2 ) {
+    u8g.setColorIndex(255);     // white
+  }
+  else if ( u8g.getMode() == U8G_MODE_GRAY2BIT ) {
+    u8g.setColorIndex(3);         // max intensity
+  }
+  else if ( u8g.getMode() == U8G_MODE_BW ) {
+    u8g.setColorIndex(1);         // pixel on
+  }
+  else if ( u8g.getMode() == U8G_MODE_HICOLOR ) {
+    u8g.setHiColorByRGB(255,255,255);
+  }
+
+ volume(0x1E);//Volume settings 0x00-0x1E
+    if (Load_Bootstate() == 0) { //メモリに0が書いてあるので再起動する
+        Set_Bootstate(1); //EEPROMに1を書いておく　次は通常起動
+        delay(500);
+        software_reset();
+    }
+    Set_Bootstate(0); //メモリに0を書いておく.
+
+    u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "KIMTECH");
+u8g.drawStr( 21, 55, "OKI-SLOT");
+} while ( u8g.nextPage() );
+delay(1000);
+
+v_blank();
+delay(200);
+}
+
+int vmode=0;//mo-do
+byte ren = 0;//連荘数
+byte i = 0;//kakuhen 
+int a_lucky = 0; //a ５（1/5)、b１０（1/10）、c ２０（1/20）、d ３０（1/30）のST
+int b_lucky = 0;
+int c_lucky = 0;
+int d_lucky = 0;
+
+void loop() {
+  // put your main code here, to run repeatedly:
+ 
+stateD = digitalRead(2);                // read
+   if ( stateD == 1 && stateF == 0 ) // plus count
+     adata++;
+     stateF = stateD;
+delay(10);
+switch(i){
+case 0:
+if(adata>=1){  
+number = random(1,65537);
+}
+break;
+case 1:
+if(adata>=1){  
+number = random(1,53000);//prem
+}
+break;
+}
+
+if( adata >= 1){
+adata -= 1;
+} 
+long moti =number;
+int s_set = analogRead(A0);
+if((s_set >= 0)&&(s_set <= 350)){
+ren = 0;
+}
+
+if((s_set >= 0)&&(s_set <= 350)){
+//green  　通常mode●
+digitalWrite(15,HIGH); 
+digitalWrite(16,LOW); 
+
+if(vmode == 2){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 32768)){
+// REG1
+n_reg1();
+vmode = 7;
+ini();
+ren++;
+ }
+
+ else if((moti >= 32769)&&(moti <= 65537)){
+// REG2
+n_reg2();
+vmode = 7;
+ini();
+ren++;
+ }
+}
+
+else if(vmode == 1){//a ５（1/5)、b１０（1/10）、c ２０（1/20）、d ３０（1/30）のST
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+else if((moti >= 1)&&(moti <= 16383)){
+// BIG1_a
+n_big1();
+ini();
+ren++;
+a_lucky = 5;
+vmode = 7;
+v_5();
+}
+else if((moti >= 16384)&&(moti <= 32767)){
+// BIG2_b
+n_big2();
+ini();
+ren++;
+b_lucky = 10; 
+vmode = 7;
+v_10();
+}
+else if((moti >= 32768)&&(moti <= 49151)){
+// BIG3_c
+s_big1();
+ini();
+ren++;
+c_lucky = 20;
+vmode = 7;
+v_20();
+}
+else if((moti >= 49152)&&(moti <= 64881)){
+// BIG4_d
+s_big2();
+ini();
+ren++;
+d_lucky = 30;
+vmode = 7;
+v_30();
+}
+else if((moti >= 64882)&&(moti <= 65537)){
+//1/100でフリーズ
+// prem
+crash();
+ren++;
+vmode = 3;
+}
+}
+
+
+
+
+
+else if(vmode == 0){
+//n_通常
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 189)){
+ // LOSS
+n_loss();
+ini();
+}
+ else if((moti >= 190)&&(moti <= 300)){
+ // LOSS1
+n_loss1();
+ini();
+}
+
+else if((moti >= 301)&&(moti <= 321)){//20
+// no_b10
+e_gogo();
+vmode = 1;
+}
+ else if((moti >= 322)&&(moti <= 9994)){
+ // LOSS
+n_loss();
+ini();
+}
+else if((moti >= 9995)&&(moti <= 10005)){//10
+// no_b
+e_lgogo();
+vmode = 1;
+}
+ else if((moti >= 10006)&&(moti <= 10014)){//8
+ // prem
+crash();
+ren++;
+vmode = 3;
+}
+ else if((moti >= 10015)&&(moti <= 10151)){
+ // LOSS
+n_loss();
+ini();
+}
+else if((moti >= 10152)&&(moti <= 10177)){//25
+// cherry_b
+e_cherry1();
+vmode = 1;
+}
+
+else if((moti >= 10178)&&(moti <= 10184)){//6
+// vib_b
+e_vibe();
+vmode = 1;
+}
+
+else if((moti >= 10185)&&(moti <= 10190)){
+// LOSS
+n_loss();
+ini();
+}
+
+
+
+ else if((moti >= 10191)&&(moti <= 10241)){//50
+// REG2
+e_gogo();
+vmode = 2;
+ }
+
+ else if((moti >= 10242)&&(moti <= 10344)){
+ // LOSS
+n_loss();
+ini();
+}
+
+ else if((moti >= 10345)&&(moti <= 10395)){//50
+// cherry_r
+e_cherry1();
+vmode = 2;
+}
+//hazure
+
+else if((moti >= 10396)&&(moti <= 11464)){ //1/60 1068  
+// cherry
+e_cherry1();
+vmode = 0;
+ini();
+}
+
+ else if((moti >= 11465)&&(moti <= 30000)){
+ // LOSS
+n_loss();
+ini();
+ }
+else if((moti >= 30001)&&(moti <= 30006)){//5
+// no_b
+e_pgogo();
+vmode = 1;
+}
+
+else if((moti >= 30007)&&(moti <= 30012)){//5
+// no_b
+e_lgogo();
+vmode = 1;
+}
+ else if((moti >= 30013)&&(moti <= 45000)){
+ // LOSS
+n_loss();
+ini();
+}
+ else if((moti >= 45001)&&(moti <= 45021)){//20
+// REG2
+e_lgogo();
+vmode = 2;
+ }
+ else if((moti >= 45022)&&(moti <= 45054)){//32
+// REG2
+e_pgogo();
+vmode = 2;
+ }
+ else if((moti >= 45055)&&(moti <= 65537)){
+ // LOSS
+n_loss();
+ini();
+}
+//231で1/284.フリーズ8 1/8192,big1/79,reg1/152
+}
+}
+
+
+
+
+
+else if((s_set >= 801)&&(s_set <= 1100)){
+// yielow  ST準備 mode●
+digitalWrite(15,HIGH); 
+digitalWrite(16,HIGH); 
+
+
+if(vmode == 6){
+//prem5
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 8192)){
+ // prem1/8
+digitalWrite(11,LOW);
+n_big1();
+ren++;
+i=1;
+a_lucky = 5;
+vmode = 7;
+v_5();
+}
+ else if((moti >= 8193)&&(moti <= 65537)){
+ // prem
+digitalWrite(11,LOW);
+n_big1();
+ren++;
+a_lucky = 5;
+vmode = 7;
+v_5();
+}
+}
+
+
+if(vmode == 5){
+//prem4 
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 65536)){
+ // 1G BIG3
+digitalWrite(11,LOW);
+s_big2();
+ren++;
+digitalWrite(11,HIGH);
+vmode = 6;
+}
+}
+
+if(vmode == 4){
+//prem3 
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 65536)){
+ // 1G BIG2
+digitalWrite(11,LOW);
+s_big5();
+ren++;
+digitalWrite(11,HIGH);
+vmode = 5;
+}
+}
+
+else if(vmode == 3){
+//prem2 
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 65536)){
+ // 1G BIG1
+digitalWrite(11,LOW);
+s_big3();
+ren++;
+digitalWrite(11,HIGH);
+vmode = 4;
+}
+}
+
+
+if(vmode == 2){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 32768)){
+// REG1
+n_reg1();
+vmode = 7;
+ini();
+ren++;
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+ }
+
+ else if((moti >= 32769)&&(moti <= 65537)){
+// REG2
+n_reg2();
+vmode = 7;
+ini();
+ren++;
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+ }
+}
+
+else if(vmode == 1){
+//n_大当たり準備
+if(moti ==0){
+// reset
+s_reset();
+}
+else if((moti >= 1)&&(moti <= 8000)){
+// BIG1_a
+n_big1();
+ini();
+ren++;
+a_lucky = 5;
+vmode = 7;
+v_5();
+}
+else if((moti >= 8001)&&(moti <= 16383)){
+// BIGV_a
+s_big3();
+ini();
+ren++;
+a_lucky = 5;
+vmode = 7;
+v_5();
+}
+else if((moti >= 16384)&&(moti <= 24384)){
+// BIG2_b
+n_big2();
+ini();
+ren++;
+b_lucky = 10; 
+vmode = 7;
+v_10();
+}
+else if((moti >= 24385)&&(moti <= 32767)){
+// BIGV_b
+s_big5();
+ini();
+ren++;
+b_lucky = 10; 
+vmode = 7;
+v_10();
+}
+
+else if((moti >= 32768)&&(moti <= 49151)){
+// BIG3_c
+s_big1();
+ini();
+ren++;
+c_lucky = 20;
+vmode = 7;
+v_20();
+}
+
+else if((moti >= 49152)&&(moti <= 65471)){
+// BIG4_d
+s_big2();
+ini();
+ren++;
+d_lucky = 30;
+vmode = 7;
+v_30();
+}
+
+else if((moti >= 65472)&&(moti <= 65537)){
+//1/1000でフリーズ
+// prem
+crash();
+ren++;
+vmode = 3;
+}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+else if(vmode == 0){
+//n_通常
+if(moti ==0){
+// reset
+s_reset();
+}
+ else if((moti >= 1)&&(moti <= 300)){
+ // LOSS
+n_loss3();
+dec();
+
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+ else if((moti >= 301)&&(moti <= 410)){//1/600
+ // LOSS1
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+
+ else if((moti >= 411)&&(moti <= 2049)){  //3277
+ // limited_c
+
+if (c_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(c_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 2050)&&(moti <= 2870)){  //3277
+ // limited_c
+
+if (c_lucky >= 1){
+e_lgogo();
+vmode = 1;
+}
+else if(c_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 2871)&&(moti <= 3688)){  //3277
+ // limited_c
+if (c_lucky >= 1){
+e_pgogo();
+vmode = 1;
+}
+else if(c_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+
+ else if((moti >= 3689)&&(moti <= 4781)){  //2185
+ // limited_d
+
+if (d_lucky >= 1){
+e_lgogo();
+vmode = 1;
+}
+else if(d_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 4782)&&(moti <= 5327)){  //2185
+ // limited_d
+
+if (d_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(d_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 5328)&&(moti <= 5874)){  //2185
+ // limited_d
+
+if (d_lucky >= 1){
+e_pgogo();
+vmode = 1;
+}
+else if(d_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+
+ else if((moti >= 5875)&&(moti <= 9999)){
+ // LOSS
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+
+
+
+else if((moti >= 10000)&&(moti <= 10132)){//132
+// cherry_b
+e_cherry1();
+vmode = 1;
+}
+
+else if((moti >= 10133)&&(moti <= 10148)){//15
+// vib_b
+e_vibe();
+vmode = 1;
+}
+ else if((moti >= 10149)&&(moti <= 10263)){ //114
+// big2
+e_gogo();
+vmode = 1;
+ }
+
+ else if((moti >= 10264)&&(moti <= 10279)){//15
+// cherry_r
+e_cherry1();
+vmode = 1;
+}
+ else if((moti >= 10280)&&(moti <= 10288)){//8
+ // prem
+crash();
+ren++;
+vmode = 3;
+}
+ else if((moti >= 10289)&&(moti <= 15305)){
+ // LOSS
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+
+else if((moti >= 15306)&&(moti <= 15335)){ //29
+// no_b
+e_lgogo();
+vmode = 1;
+}
+else if((moti >= 15336)&&(moti <= 15390)){ //54
+// no_b
+e_gogo();
+vmode = 1;
+}
+else if((moti >= 15391)&&(moti <= 15434)){ //43
+// no_b
+e_pgogo();
+vmode = 1;
+}
+
+ else if((moti >= 15435)&&(moti <= 15499)){ //64
+//big1
+e_lgogo();
+vmode = 1;
+ }
+ else if((moti >= 15500)&&(moti <= 15524)){ //25
+// big2
+e_pgogo();
+vmode = 2;
+ }
+ else if((moti >= 15525)&&(moti <= 15549)){ //25
+// big3
+e_gogo();
+vmode = 2;
+ }
+
+ else if((moti >= 15550)&&(moti <= 20305)){
+ // LOSS
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+
+ else if((moti >= 20306)&&(moti <= 26859)){  //13107
+ // limited_a
+
+if (a_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(a_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 26860)&&(moti <= 30136)){  //13107
+ // limited_a
+
+if (a_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(a_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 30137)&&(moti <= 33413)){  //13107
+ // limited_a
+
+if (a_lucky >= 1){
+e_pgogo();
+vmode = 1;
+}
+else if(a_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+
+ else if((moti >= 33414)&&(moti <= 36690)){ //6553
+ // limited_b
+
+if (b_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(b_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 36691)&&(moti <= 38329)){ //6553
+ // limited_b
+
+if (b_lucky >= 1){
+e_gogo();
+vmode = 1;
+}
+else if(b_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+ else if((moti >= 38330)&&(moti <= 39967)){ //6553
+ // limited_b
+
+if (b_lucky >= 1){
+e_pgogo();
+vmode = 1;
+}
+else if(b_lucky <= 0){
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+}
+
+ else if((moti >= 39968)&&(moti <= 65537)){
+ // LOSS
+n_loss3();
+dec();
+if( a_lucky == 0){//a
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( b_lucky == 0){//b
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( c_lucky == 0){//c
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+else if( d_lucky == 0){//d
+v_blank();
+delay(10);
+h_ren();
+delay(30);
+}
+}
+//522   1/125(フリーズ込み)
+}
+}
+
+if(vmode == 7){
+vmode = 0;
+}
+if( moti >= 1){
+number=0;
+}
+
+
+
+ }
+
+void ini(){
+a_lucky = 0; //a ５（1/5)、b１０（1/10）、c ２０（1/20）、d ３０（1/30）のST
+b_lucky = 0;
+c_lucky = 0;
+d_lucky = 0;
+}
+void dec(){
+--a_lucky;
+--b_lucky;
+--c_lucky;
+--d_lucky;
+}
+
+
+
+
+void e_lgogo(){  //バイブ後無音ピカ 1/4
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+digitalWrite(7,HIGH); 
+delay(1000);
+digitalWrite(7,LOW); 
+delay(600);
+v_gogo();
+delay(200);
+play(0x02);
+delay(900);
+}
+
+void e_pgogo(){  //先無音ピカ 1/4
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+v_gogo();
+delay(300);
+play(0x01);
+delay(1600);
+play(0x02);
+delay(900);
+}
+
+
+void e_gogo(){  //がこ後ピカ 2/4
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_gogo();
+delay(200);
+play(0x03);
+delay(1400);
+play(0x02);
+delay(900);
+}
+
+void v_gogo(){
+     u8g.firstPage();  
+  do {
+ u8g.setColorIndex(1);
+u8g.drawStr( 30, 39, "GOGO!");
+ 
+u8g.drawLine(10, 31, 30, 20);//開始横x、開始縦y、終横x、終縦y
+u8g.drawLine(30, 20,25,0);
+u8g.drawLine(25,0,47,15);
+u8g.drawLine(47,15,54,0);
+u8g.drawLine(54,0,63,13);
+u8g.drawLine(63,13,70,1);
+u8g.drawLine(72,1,83,13);
+u8g.drawLine(83,13,95,0);
+u8g.drawLine(95,0,100,12);
+u8g.drawLine(100,12,125,0);
+u8g.drawLine(125,0,106,25);
+
+
+u8g.drawLine(10, 31, 30, 40);
+u8g.drawLine(30, 40,26,57);
+u8g.drawLine(26,57,40,45);
+u8g.drawLine(40,45,47,59);
+u8g.drawLine(47,59,56,47);
+u8g.drawLine(56,47,65,64);
+u8g.drawLine(65,64,75,47);
+u8g.drawLine(75,47,84,60);
+u8g.drawLine(84,60,90,49);
+u8g.drawLine(90,49,105,61);
+u8g.drawLine(105,61,102,44);
+u8g.drawLine(102,44,128,36);
+u8g.drawLine(128,36,106,25);
+  } while( u8g.nextPage() );
+}
+void h_ren(){
+u8g.firstPage();  
+  do {
+u8g.setColorIndex(1);
+u8g.drawStr( 10, 22, "ZYAG REN");
+u8g.setPrintPos(80,50);
+u8g.print(ren);  
+  } while( u8g.nextPage() );
+}
+
+
+void s_reset(){
+digitalWrite(3,LOW);
+digitalWrite(4,LOW);
+digitalWrite(5,HIGH); 
+digitalWrite(6,LOW); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+play(0x00);
+delay(30);
+}
+
+
+void n_loss(){
+
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1300);
+v_blank();
+delay(150);
+i=0;
+play(0x02);
+delay(800);
+}
+
+void n_loss1(){//シード初期化
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+
+randomSeed(analogRead(3));
+
+play(0x02);
+delay(900);
+}
+void n_loss3(){
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+
+
+play(0x02);
+delay(900);
+}
+
+void v_blank(){
+    u8g.firstPage();  
+  do {
+ u8g.setColorIndex(0);
+u8g.drawBox(0, 0, 128, 64);
+  } while( u8g.nextPage() );
+}
+
+
+
+
+
+
+
+
+
+
+void n_big1(){ //1-2
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400); 
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x05);
+delay(30500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+
+void n_big2(){ // 2-1
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200); 
+v_BIG();
+delay(400);
+play(0x06);
+delay(41500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+void s_big1(){ //3-1
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x07);
+delay(39500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+void s_big2(){ //4-1
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x08);
+delay(44500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(2000);
+}
+void s_big3(){ //cry
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x0b);
+delay(46500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+void s_big4(){  //zyan
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x0c);
+delay(40500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+delay(1500);
+}
+void s_big5(){ //kusa
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(3,HIGH);  
+digitalWrite(5,LOW);  
+play(0x04);
+delay(2400);
+v_blank();
+delay(200);
+v_BIG();
+delay(400);
+play(0x0d);
+delay(41500);
+digitalWrite(3,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+void n_reg1(){ //r1
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(4,HIGH);
+digitalWrite(5,LOW); 
+play(0x01);
+delay(2000); 
+v_blank();
+delay(400);
+v_reg();
+delay(500);
+play(0x09);
+delay(16500);
+digitalWrite(4,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+void n_reg2(){ //r3
+digitalWrite(6,HIGH); 
+digitalWrite(11,LOW); 
+digitalWrite(4,HIGH);
+digitalWrite(5,LOW); 
+play(0x01);
+delay(2000); 
+v_blank();
+delay(400);
+v_reg();
+delay(500);
+play(0x0a);
+delay(13500);
+digitalWrite(4,LOW); 
+digitalWrite(9,HIGH);
+v_blank();
+delay(500);
+
+delay(1500);
+}
+
+void crash(){
+v_blank();
+delay(50);
+digitalWrite(11,HIGH);
+play(0x0e);
+delay(2400);
+delay(1000);
+digitalWrite(7,HIGH);
+delay(1000);
+digitalWrite(7,LOW);
+delay(400);
+digitalWrite(7,HIGH);
+delay(2000);
+digitalWrite(7,LOW);
+ren++;
+play(0x0f);
+delay(5500);
+s_big4();
+digitalWrite(11,HIGH);
+}
+
+void v_BIG(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "BIG");
+u8g.drawStr( 21, 55, "BONUS");
+} while ( u8g.nextPage() );
+}
+
+
+void v_5(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "LUCKY");
+u8g.drawStr( 21, 55, "5");
+} while ( u8g.nextPage() );
+}
+
+void v_10(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "LUCKY");
+u8g.drawStr( 21, 55, "10");
+} while ( u8g.nextPage() );
+}
+
+void v_20(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "LUCKY");
+u8g.drawStr( 21, 55, "20");
+} while ( u8g.nextPage() );
+}
+
+void v_30(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "LUCKY");
+u8g.drawStr( 21, 55, "30");
+} while ( u8g.nextPage() );
+}
+
+
+void v_CHANCE(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 41, "CHANCE");
+} while ( u8g.nextPage() );
+}
+
+void v_reg(){
+    u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 27, "REG");
+u8g.drawStr( 21, 55, "BONUS");
+} while ( u8g.nextPage() );
+}
+void v_cherry(){
+  u8g.firstPage();  
+  do {
+     u8g.setColorIndex(1);
+u8g.drawStr( 21, 60, "cherry");
+u8g.drawEllipse(93, 22, 14, 6);
+u8g.drawEllipse(98, 34, 15, 6);
+u8g.drawLine(80, 24, 97, 22);
+u8g.drawLine(80, 35, 105, 34);
+u8g.drawFilledEllipse(67, 14, 11, 11);
+u8g.drawFilledEllipse(78, 34, 13, 13);
+u8g.drawFilledEllipse(53, 34, 12, 12);
+  } while( u8g.nextPage() );  
+}
+
+void e_vibe(){  //２％　　
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+digitalWrite(7,HIGH); 
+delay(1000);
+digitalWrite(7,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+play(0x02);
+delay(900);
+}
+void e_cherry1(){ 
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+v_cherry();
+delay(200);
+play(0x12);//n_cherry
+delay(1000);
+play(0x02);
+delay(900);
+}
+void esp_suika(){  
+digitalWrite(3,LOW);
+digitalWrite(4,LOW); 
+digitalWrite(5,LOW); 
+digitalWrite(6,HIGH); 
+digitalWrite(7,LOW);  
+digitalWrite(8,LOW); 
+digitalWrite(9,LOW); 
+digitalWrite(11,LOW); 
+play(0x01);
+delay(1400);
+v_blank(); 
+delay(200);
+v_CHANCE();
+delay(200);
+play(0x13);//sp_cherry
+delay(1700);
+play(0x02);
+delay(1100);
+}
+void play(unsigned char Track)
+{
+ unsigned char play[6] = {0xAA,0x07,0x02,0x00,Track,Track+0xB3};
+   Serial1.write(play,6);
+}
+void volume( unsigned char vol)
+{
+  unsigned char volume[5] = {0xAA,0x13,0x01,vol,vol+0xBE};
+     Serial1.write(volume,5);
+ }
+void statu( unsigned char sta)
+{
+  unsigned char statu[5] = {0xAA,0x01,0x00,sta,sta+0xAB};
+     Serial1.write(statu,5);
+ }
+
